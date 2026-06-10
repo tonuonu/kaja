@@ -40,9 +40,13 @@ export interface Session {
 }
 
 // --- Reactive state ---------------------------------------------------
+/** True once init() finished (db open, settings loaded, session restored). */
+export const ready = signal(false)
 export const session = signal<Session | null>(null)
 /** True when a local key exists but has not been unlocked this session. */
 export const locked = signal(false)
+/** Freshly generated nsec awaiting user backup confirmation (blocks the UI until acknowledged). */
+export const pendingBackup = signal<string | null>(null)
 export const notes = signal<Event[]>([])
 export const profiles = signal<Map<string, ProfileContent>>(new Map())
 export const follows = signal<string[]>([])
@@ -99,6 +103,7 @@ export async function createIdentity(passphrase: string): Promise<string> {
   const id = generateIdentity()
   localStorage.setItem(LS_NCRYPTSEC, encryptSecret(id.sk, passphrase))
   localStorage.setItem(LS_METHOD, 'local')
+  pendingBackup.value = id.nsec
   await startSession(new LocalSigner(id.sk), 'local')
   return id.nsec
 }
@@ -128,6 +133,7 @@ export function logout(): void {
   feed.stop()
   session.value = null
   locked.value = false
+  pendingBackup.value = null
   notes.value = []
   follows.value = []
   seenIds.clear()
