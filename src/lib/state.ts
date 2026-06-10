@@ -13,7 +13,7 @@ import {
   type MediaRef,
   type ProfileContent,
 } from './events'
-import { getMeta, getSetting, openKajaDb, saveMeta, saveNote, setSetting, type Db } from './db'
+import { getMeta, getSetting, listFollowers, openKajaDb, saveMeta, saveNote, setSetting, type Db } from './db'
 import {
   decryptSecret,
   encryptSecret,
@@ -22,6 +22,7 @@ import {
   importSecret,
   LocalSigner,
   Nip07Signer,
+  toNpub,
   toPubkeyHex,
   type Signer,
 } from './keys'
@@ -50,6 +51,8 @@ export const pendingBackup = signal<string | null>(null)
 export const notes = signal<Event[]>([])
 export const profiles = signal<Map<string, ProfileContent>>(new Map())
 export const follows = signal<string[]>([])
+/** People who follow us, newest first. Unfollows are not detectable, so this can overcount. */
+export const followers = signal<string[]>([])
 export const online = signal(typeof navigator !== 'undefined' ? navigator.onLine : true)
 export const outboxPending = signal(0)
 export const feedRelays = signal<string[]>([])
@@ -136,6 +139,7 @@ export function logout(): void {
   pendingBackup.value = null
   notes.value = []
   follows.value = []
+  followers.value = []
   seenIds.clear()
 }
 
@@ -150,7 +154,26 @@ async function startSession(signer: Signer, method: 'local' | 'nip07'): Promise<
     const p = parseProfile(profileEv)
     if (p) upsertProfile(pubkey, p)
   }
+  followers.value = await listFollowers(db)
   await restartFeed()
+  void fetchProfiles(followers.value)
+}
+
+/** Fetches and caches kind 0 profiles we don't have yet (e.g. for followers). */
+async function fetchProfiles(pubkeys: string[]): Promise<void> {
+  const missing = pubkeys.filter((pk) => !profiles.value.has(pk))
+  if (missing.length === 0) return
+  const events = await hub.query(feedRelays.value.length > 0 ? feedRelays.value : relays.value, {
+    kinds: [KIND_PROFILE],
+    authors: missing,
+  })
+  for (const ev of events) await saveMeta(db, ev)
+  for (const pk of missing) {
+    const stored = await getMeta(db, KIND_PROFILE, pk)
+    if (!stored) continue
+    const p = parseProfile(stored)
+    if (p) upsertProfile(pk, p)
+  }
 }
 
 // --- Feed -------------------------------------------------------------
@@ -171,7 +194,7 @@ export async function restartFeed(): Promise<void> {
   const s = session.value
   if (!s) return
   const authors = [s.pubkey, ...follows.value]
-  await feed.start(relays.value, authors, {
+  await feed.start(relays.value, s.pubkey, authors, {
     onNote: (ev, live) => {
       insertNote(ev)
       if (live && autoEcho.value && ev.pubkey !== s.pubkey) void echoNote(ev, true)
@@ -185,8 +208,28 @@ export async function restartFeed(): Promise<void> {
         follows.value = parseContacts(ev)
       }
     },
+    onNewFollowers: (pubkeys, phase) => {
+      const known = new Set(followers.value)
+      followers.value = [...pubkeys.filter((pk) => !known.has(pk)), ...followers.value]
+      void fetchProfiles(pubkeys).then(() => {
+        if (phase === 'live') {
+          for (const pk of pubkeys) {
+            const name = profiles.value.get(pk)?.name ?? shortNpub(pk)
+            showToast(`${name} started following you`)
+          }
+        } else if (phase === 'backfill') {
+          showToast(`${pubkeys.length} new follower${pubkeys.length > 1 ? 's' : ''} since your last visit`)
+        }
+        // 'baseline' (first ever scan) stays silent: they aren't news.
+      })
+    },
   })
   feedRelays.value = feed.relays
+}
+
+function shortNpub(pubkey: string): string {
+  const npub = toNpub(pubkey)
+  return `${npub.slice(0, 12)}…`
 }
 
 // --- Actions ----------------------------------------------------------

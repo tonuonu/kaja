@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks'
 import { toNpub } from '../lib/keys'
-import { followUser, follows, profiles, session, showToast, unfollowUser } from '../lib/state'
+import { followers, followUser, follows, profiles, session, showToast, unfollowUser } from '../lib/state'
 import { Avatar } from './Avatar'
 import { CopyIcon } from './Icons'
 import { npubShort } from './format'
@@ -81,6 +81,40 @@ export function Follows() {
               >
                 Unfollow
               </button>
+            </div>
+          )
+        })}
+      </div>
+
+      <div class="panel">
+        <h3>Followers ({followers.value.length})</h3>
+        {followers.value.length === 0 && (
+          <p class="hint">Nobody yet. When someone follows you, it shows up here — and as a notification.</p>
+        )}
+        {followers.value.map((pk) => {
+          const profile = profiles.value.get(pk)
+          const followedBack = follows.value.includes(pk)
+          return (
+            <div class="personrow" key={pk}>
+              <Avatar pubkey={pk} profile={profile} />
+              <div class="who">
+                <span class="name">{profile?.name ?? 'anonym'}</span>
+                <span class="addr">{npubShort(pk)}</span>
+              </div>
+              {followedBack ? (
+                <span class="chip">Following</span>
+              ) : (
+                <button
+                  class="btn small"
+                  onClick={() =>
+                    void followUser(pk)
+                      .then(() => showToast('Followed back'))
+                      .catch((e) => showToast(String(e)))
+                  }
+                >
+                  Follow back
+                </button>
+              )}
             </div>
           )
         })}

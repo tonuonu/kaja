@@ -95,6 +95,11 @@ export function parseProfile(ev: Event): ProfileContent | null {
   }
 }
 
+/** True if this contact list event includes the given pubkey (i.e. its author follows them). */
+export function contactsInclude(ev: Event, pubkey: string): boolean {
+  return ev.kind === KIND_CONTACTS && ev.tags.some((t) => t[0] === 'p' && t[1] === pubkey)
+}
+
 export function parseContacts(ev: Event): string[] {
   if (ev.kind !== KIND_CONTACTS) return []
   return ev.tags.filter((t) => t[0] === 'p' && /^[0-9a-f]{64}$/.test(t[1] ?? '')).map((t) => t[1])

@@ -33,21 +33,45 @@ interface KajaDB extends DBSchema {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     value: any
   }
+  /** People whose contact list tags us, keyed by their pubkey. */
+  followers: {
+    key: string
+    value: { pubkey: string; firstSeen: number }
+  }
 }
 
 export type Db = IDBPDatabase<KajaDB>
 
 export async function openKajaDb(): Promise<Db> {
-  return openDB<KajaDB>('kaja', 1, {
-    upgrade(db) {
-      const notes = db.createObjectStore('notes', { keyPath: 'id' })
-      notes.createIndex('by-created', 'created_at')
-      notes.createIndex('by-author', 'pubkey')
-      db.createObjectStore('meta')
-      db.createObjectStore('outbox', { keyPath: 'id' })
-      db.createObjectStore('settings')
+  return openDB<KajaDB>('kaja', 2, {
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1) {
+        const notes = db.createObjectStore('notes', { keyPath: 'id' })
+        notes.createIndex('by-created', 'created_at')
+        notes.createIndex('by-author', 'pubkey')
+        db.createObjectStore('meta')
+        db.createObjectStore('outbox', { keyPath: 'id' })
+        db.createObjectStore('settings')
+      }
+      if (oldVersion < 2) {
+        db.createObjectStore('followers', { keyPath: 'pubkey' })
+      }
     },
   })
+}
+
+/** Records a follower; returns true only the first time this pubkey is seen. */
+export async function addFollower(db: Db, pubkey: string, firstSeen: number): Promise<boolean> {
+  const existing = await db.get('followers', pubkey)
+  if (existing) return false
+  await db.put('followers', { pubkey, firstSeen })
+  return true
+}
+
+/** Follower pubkeys, newest first. Unfollows are not detectable (see feed.ts), so this can overcount. */
+export async function listFollowers(db: Db): Promise<string[]> {
+  const all = await db.getAll('followers')
+  return all.sort((a, b) => b.firstSeen - a.firstSeen).map((f) => f.pubkey)
 }
 
 /** Stores a note; returns true if it was new. */

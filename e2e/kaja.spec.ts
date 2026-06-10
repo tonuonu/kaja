@@ -64,6 +64,12 @@ test('two browsers exchange posts through a relay', async ({ page, browser }) =>
   await pageB.getByRole('button', { name: 'Follow', exact: true }).click()
   await expect(pageB.locator('.personrow')).toHaveCount(1)
 
+  // A is notified live and sees B in the Followers panel (A is on the People view).
+  await expect(page.locator('.toast')).toContainText('started following you', { timeout: 15_000 })
+  await expect(page.locator('.panel', { hasText: 'Followers (1)' }).locator('.personrow')).toHaveCount(1)
+  await page.locator('.panel', { hasText: 'Followers (1)' }).getByRole('button', { name: 'Follow back' }).click()
+  await expect(page.locator('.panel', { hasText: 'Followers (1)' }).locator('.chip', { hasText: 'Following' })).toBeVisible()
+
   // Backfill: A's older post arrives via the relay.
   await pageB.locator('a.navbtn[href="#/"]').click()
   await expect(pageB.locator('.post', { hasText: 'First echo into the night' })).toBeVisible({
