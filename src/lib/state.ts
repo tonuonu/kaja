@@ -43,6 +43,8 @@ export interface Session {
 // --- Reactive state ---------------------------------------------------
 /** True once init() finished (db open, settings loaded, session restored). */
 export const ready = signal(false)
+/** Fatal startup failure (e.g. IndexedDB unavailable). Blocks the UI instead of half-running. */
+export const initError = signal<string | null>(null)
 export const session = signal<Session | null>(null)
 /** True when a local key exists but has not been unlocked this session. */
 export const locked = signal(false)
@@ -75,8 +77,62 @@ export function showToast(message: string): void {
   }, 4000)
 }
 
+/** sessionStorage itself throws in storage-hostile browsers; treat it as best-effort. */
+function safeSessionGet(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSessionSet(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value)
+  } catch {
+    // storage blocked — the heal may repeat, which is harmless
+  }
+}
+
+/**
+ * Opens the database, recovering from the three known failure modes:
+ * - Blocked: a tab running older code holds the connection and would block
+ *   a schema upgrade forever. We surface guidance and resolve automatically
+ *   once that tab closes.
+ * - VersionError: stale app code (served from an old service worker cache)
+ *   meeting a database already upgraded by a newer version. Self-heal by
+ *   purging caches + service workers and reloading to the current code.
+ * - Transient open failures (Safari is notorious): one delayed retry.
+ */
+async function openDbWithRecovery(): Promise<Db> {
+  const onBlocked = () => {
+    initError.value =
+      'Kaja is open in another tab with an older version, which blocks the storage upgrade. ' +
+      'Close the other Kaja tabs — this one continues automatically.'
+  }
+  const clearAndReturn = (opened: Db): Db => {
+    initError.value = null
+    return opened
+  }
+  try {
+    return clearAndReturn(await openKajaDb(onBlocked))
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'VersionError' && !safeSessionGet('kaja:healed')) {
+      safeSessionSet('kaja:healed', '1')
+      const cacheKeys = await caches.keys().catch(() => [] as string[])
+      await Promise.all(cacheKeys.map((k) => caches.delete(k)))
+      const regs = (await navigator.serviceWorker?.getRegistrations().catch(() => [])) ?? []
+      await Promise.all(regs.map((r) => r.unregister()))
+      location.reload()
+      return new Promise<Db>(() => undefined) // reloading; keep the splash up
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    return clearAndReturn(await openKajaDb(onBlocked))
+  }
+}
+
 export async function init(): Promise<void> {
-  db = await openKajaDb()
+  db = await openDbWithRecovery()
   hub = new RelayHub()
   outbox = new Outbox(db, (rs, ev) => hub.publish(rs, ev))
   outbox.onChange = (n) => (outboxPending.value = n)
@@ -102,7 +158,15 @@ export async function init(): Promise<void> {
 }
 
 // --- Identity ---------------------------------------------------------
+/** Refuses to silently replace a stored key — that would destroy an identity forever. */
+function assertNoStoredKey(): void {
+  if (localStorage.getItem(LS_NCRYPTSEC)) {
+    throw new Error('An identity already exists on this device. Unlock it, or log out first to replace it.')
+  }
+}
+
 export async function createIdentity(passphrase: string): Promise<string> {
+  assertNoStoredKey()
   const id = generateIdentity()
   localStorage.setItem(LS_NCRYPTSEC, encryptSecret(id.sk, passphrase))
   localStorage.setItem(LS_METHOD, 'local')
@@ -112,6 +176,7 @@ export async function createIdentity(passphrase: string): Promise<string> {
 }
 
 export async function importIdentity(nsec: string, passphrase: string): Promise<void> {
+  assertNoStoredKey()
   const sk = importSecret(nsec)
   localStorage.setItem(LS_NCRYPTSEC, encryptSecret(sk, passphrase))
   localStorage.setItem(LS_METHOD, 'local')
