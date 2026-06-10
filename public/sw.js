@@ -33,10 +33,23 @@ self.addEventListener('fetch', (event) => {
   if (request.mode === 'navigate') {
     event.respondWith(
       caches.open(CACHE).then(async (cache) => {
+        // Network-first with a short timeout: fresh deploys win on a healthy
+        // connection, the cached shell wins on a slow one (the fetch keeps
+        // running in the background to update the cache for next time).
+        const fetchAndCache = fetch(request).then((response) => {
+          if (response.ok) cache.put(request, response.clone())
+          return response
+        })
+        const timeout = new Promise((resolve) => setTimeout(() => resolve(undefined), 2500))
         try {
-          const fresh = await fetch(request)
-          if (fresh.ok) cache.put(request, fresh.clone())
-          return fresh
+          const fresh = await Promise.race([fetchAndCache, timeout])
+          if (fresh) return fresh
+          const cached = (await cache.match(request)) ?? (await cache.match('./'))
+          if (cached) {
+            fetchAndCache.catch(() => undefined)
+            return cached
+          }
+          return await fetchAndCache
         } catch {
           return (await cache.match(request)) ?? (await cache.match('./')) ?? Response.error()
         }

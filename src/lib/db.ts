@@ -42,7 +42,12 @@ interface KajaDB extends DBSchema {
 
 export type Db = IDBPDatabase<KajaDB>
 
-export async function openKajaDb(): Promise<Db> {
+/**
+ * @param onBlocked Called when another tab holds an older connection and
+ * blocks our upgrade (e.g. a tab still running old code without a blocking
+ * handler). The open resolves automatically once that tab closes.
+ */
+export async function openKajaDb(onBlocked?: () => void): Promise<Db> {
   let db: Db
   db = await openDB<KajaDB>('kaja', 2, {
     upgrade(db, oldVersion) {
@@ -57,6 +62,9 @@ export async function openKajaDb(): Promise<Db> {
       if (oldVersion < 2) {
         db.createObjectStore('followers', { keyPath: 'pubkey' })
       }
+    },
+    blocked() {
+      onBlocked?.()
     },
     // A newer app version in another tab wants to upgrade the schema.
     // Release our connection and reload into the new version, so the

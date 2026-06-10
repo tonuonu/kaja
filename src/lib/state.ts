@@ -77,19 +77,48 @@ export function showToast(message: string): void {
   }, 4000)
 }
 
+/** sessionStorage itself throws in storage-hostile browsers; treat it as best-effort. */
+function safeSessionGet(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSessionSet(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value)
+  } catch {
+    // storage blocked — the heal may repeat, which is harmless
+  }
+}
+
 /**
- * Opens the database, recovering from the two known failure modes:
+ * Opens the database, recovering from the three known failure modes:
+ * - Blocked: a tab running older code holds the connection and would block
+ *   a schema upgrade forever. We surface guidance and resolve automatically
+ *   once that tab closes.
  * - VersionError: stale app code (served from an old service worker cache)
  *   meeting a database already upgraded by a newer version. Self-heal by
  *   purging caches + service workers and reloading to the current code.
  * - Transient open failures (Safari is notorious): one delayed retry.
  */
 async function openDbWithRecovery(): Promise<Db> {
+  const onBlocked = () => {
+    initError.value =
+      'Kaja is open in another tab with an older version, which blocks the storage upgrade. ' +
+      'Close the other Kaja tabs — this one continues automatically.'
+  }
+  const clearAndReturn = (opened: Db): Db => {
+    initError.value = null
+    return opened
+  }
   try {
-    return await openKajaDb()
+    return clearAndReturn(await openKajaDb(onBlocked))
   } catch (e) {
-    if (e instanceof DOMException && e.name === 'VersionError' && !sessionStorage.getItem('kaja:healed')) {
-      sessionStorage.setItem('kaja:healed', '1')
+    if (e instanceof DOMException && e.name === 'VersionError' && !safeSessionGet('kaja:healed')) {
+      safeSessionSet('kaja:healed', '1')
       const cacheKeys = await caches.keys().catch(() => [] as string[])
       await Promise.all(cacheKeys.map((k) => caches.delete(k)))
       const regs = (await navigator.serviceWorker?.getRegistrations().catch(() => [])) ?? []
@@ -98,7 +127,7 @@ async function openDbWithRecovery(): Promise<Db> {
       return new Promise<Db>(() => undefined) // reloading; keep the splash up
     }
     await new Promise((resolve) => setTimeout(resolve, 400))
-    return openKajaDb()
+    return clearAndReturn(await openKajaDb(onBlocked))
   }
 }
 

@@ -22,7 +22,7 @@ function ErrorGate({ message }: { message: string }) {
       <h1>KAJA</h1>
       <div class="gate-card">
         <p>
-          <b>Browser storage is not available, so Kaja cannot start safely.</b>
+          <b>Kaja cannot start safely.</b>
         </p>
         <p class="hint">
           Usual causes: another Kaja tab open with an older version (close all Kaja tabs, then
@@ -30,7 +30,7 @@ function ErrorGate({ message }: { message: string }) {
           "Block all cookies").
         </p>
         <div class="field">
-          <label>Technical detail</label>
+          <label>Detail</label>
           <div class="keybox">{message}</div>
         </div>
         <div class="stack">
@@ -69,8 +69,10 @@ export function App() {
     return () => clearInterval(timer)
   }, [])
 
-  if (!ready.value) return <div class="splash">KAJA · TUNING…</div>
+  // initError outranks the splash: it can be set while init() is still
+  // pending (e.g. waiting for an old tab to release the database).
   if (initError.value) return <ErrorGate message={initError.value} />
+  if (!ready.value) return <div class="splash">KAJA · TUNING…</div>
   if (locked.value) return <Unlock />
   const s = session.value
   if (!s) return <Onboarding />
