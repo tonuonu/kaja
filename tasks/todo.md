@@ -15,7 +15,10 @@ Scratch tracking for the initial build. Canonical work items: GitHub Issues.
       reload restores cache behind passphrase lock — PASSING
 - [x] CI workflow (unit + build + e2e), GitHub Pages deploy workflow
 - [x] docker-compose strfry for local/self-hosted relay (not exercised in CI)
-- [ ] PR opened, Pages enabled — merge is the user's call
+- [x] PR #1 merged, Pages live at tonuonu.github.io/kaja — verified working in production
+- [x] Follower notifications (Lauri's request, 2026-06-10): live toast, "N new since last
+      visit", Followers panel with follow-back. Caveat: unfollows undetectable (the
+      unfollow event no longer tags us), so the followers list can overcount.
 
 ## Review
 

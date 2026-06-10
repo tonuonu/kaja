@@ -66,6 +66,7 @@ does not matter.
 
 Working MVP: identity (NIP-07 extension or NIP-49 encrypted local key), feed with live
 updates (NIP-65 outbox model), offline-first posting, image upload (Blossom), follows,
+follower notifications with follow-back (live toast + "new since your last visit"),
 echo/auto-echo, PWA offline shell. Roadmap (see DESIGN.md): replies and reactions
 rendering, long-form posts, encrypted friends-only tier, eIDAS/UDSP identity
 attestations, IPFS as a second media backend.
