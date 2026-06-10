@@ -31,3 +31,6 @@ Scratch tracking for the initial build. Canonical work items: GitHub Issues.
   eID attestations, image EXIF stripping (upload is as-is in v1 — flag to user).
 - Public Blossom servers may rate-limit or require payment for uploads; default is
   blossom.primal.net, configurable in Settings.
+- 2026-06-10 production incident (Lauri, Safari): init failure half-ran the app — see
+  tasks/lessons.md. Fixed by ErrorGate + VersionError self-heal + network-first SW
+  navigations + identity-overwrite guard.

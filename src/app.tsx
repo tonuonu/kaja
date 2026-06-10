@@ -1,6 +1,6 @@
 import { signal } from '@preact/signals'
 import { useEffect } from 'preact/hooks'
-import { connectedRelayCount, locked, online, outboxPending, pendingBackup, ready, session, toast } from './lib/state'
+import { connectedRelayCount, initError, locked, online, outboxPending, pendingBackup, ready, session, toast } from './lib/state'
 import { Feed } from './ui/Feed'
 import { Follows } from './ui/Follows'
 import { BackupGate, Onboarding, Unlock } from './ui/Onboarding'
@@ -14,6 +14,34 @@ window.addEventListener('hashchange', () => {
 })
 
 const relayCount = signal(0)
+
+/** Startup failed in a way we can't self-heal — explain instead of half-running. */
+function ErrorGate({ message }: { message: string }) {
+  return (
+    <div class="gate">
+      <h1>KAJA</h1>
+      <div class="gate-card">
+        <p>
+          <b>Browser storage is not available, so Kaja cannot start safely.</b>
+        </p>
+        <p class="hint">
+          Usual causes: another Kaja tab open with an older version (close all Kaja tabs, then
+          reload), private browsing mode, or a browser setting that blocks site data (in Safari:
+          "Block all cookies").
+        </p>
+        <div class="field">
+          <label>Technical detail</label>
+          <div class="keybox">{message}</div>
+        </div>
+        <div class="stack">
+          <button class="btn primary" onClick={() => location.reload()}>
+            Reload
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function StatusBar({ pubkey }: { pubkey: string }) {
   return (
@@ -42,6 +70,7 @@ export function App() {
   }, [])
 
   if (!ready.value) return <div class="splash">KAJA · TUNING…</div>
+  if (initError.value) return <ErrorGate message={initError.value} />
   if (locked.value) return <Unlock />
   const s = session.value
   if (!s) return <Onboarding />

@@ -1,14 +1,14 @@
 import { render } from 'preact'
 import './styles.css'
 import { App } from './app'
-import { init, ready, showToast } from './lib/state'
+import { init, initError, ready } from './lib/state'
 
 render(<App />, document.getElementById('app')!)
 
 init()
   .catch((e) => {
     console.error('init failed', e)
-    showToast('Startup problem — some features may not work')
+    initError.value = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
   })
   .finally(() => {
     ready.value = true

@@ -43,7 +43,8 @@ interface KajaDB extends DBSchema {
 export type Db = IDBPDatabase<KajaDB>
 
 export async function openKajaDb(): Promise<Db> {
-  return openDB<KajaDB>('kaja', 2, {
+  let db: Db
+  db = await openDB<KajaDB>('kaja', 2, {
     upgrade(db, oldVersion) {
       if (oldVersion < 1) {
         const notes = db.createObjectStore('notes', { keyPath: 'id' })
@@ -57,7 +58,15 @@ export async function openKajaDb(): Promise<Db> {
         db.createObjectStore('followers', { keyPath: 'pubkey' })
       }
     },
+    // A newer app version in another tab wants to upgrade the schema.
+    // Release our connection and reload into the new version, so the
+    // other tab is not blocked forever.
+    blocking() {
+      db.close()
+      location.reload()
+    },
   })
+  return db
 }
 
 /** Records a follower; returns true only the first time this pubkey is seen. */
