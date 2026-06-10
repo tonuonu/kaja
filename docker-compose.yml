@@ -1,0 +1,18 @@
+# Local Nostr relay for development and self-hosting experiments.
+# Run `docker compose up -d`, then add ws://localhost:7777 to your
+# relay list in Kaja's Settings.
+#
+# This same single container on any €5 VPS or Raspberry Pi is a full
+# community relay node.
+services:
+  relay:
+    image: dockurr/strfry
+    container_name: kaja-relay
+    restart: unless-stopped
+    ports:
+      - '7777:7777'
+    volumes:
+      - strfry-db:/app/strfry-db
+
+volumes:
+  strfry-db:
