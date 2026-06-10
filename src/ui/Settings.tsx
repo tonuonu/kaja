@@ -152,10 +152,23 @@ function KeyPanel() {
 }
 
 export function Settings() {
+  const loggedIn = !!session.value
   return (
     <div class="view">
       <h2 class="viewtitle">Settings</h2>
-      <ProfilePanel />
+      {loggedIn ? (
+        <ProfilePanel />
+      ) : (
+        <div class="panel">
+          <h3>Identity</h3>
+          <p class="hint">
+            You're browsing as a guest. Create an identity to post, set a profile, and be followed.
+          </p>
+          <button class="btn primary small" onClick={() => (window.location.hash = '#/welcome')}>
+            Create your identity
+          </button>
+        </div>
+      )}
       <ListEditor
         title="Relays (one per line)"
         hint="Your posts are written to all of these; your feed reads from these plus your friends' relays. Anyone can run one (e.g. strfry on a Raspberry Pi)."
@@ -176,6 +189,7 @@ export function Settings() {
           <input
             type="checkbox"
             checked={autoEcho.value}
+            disabled={!loggedIn}
             onChange={(e) => void saveAutoEcho((e.target as HTMLInputElement).checked)}
           />
           <span>
@@ -198,7 +212,7 @@ export function Settings() {
           ))}
         </div>
       </div>
-      <KeyPanel />
+      {loggedIn && <KeyPanel />}
     </div>
   )
 }

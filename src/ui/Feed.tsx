@@ -2,7 +2,7 @@ import { useState } from 'preact/hooks'
 import type { Event } from 'nostr-tools'
 import * as nip19 from 'nostr-tools/nip19'
 import { parseImeta } from '../lib/events'
-import { echoNote, likeNote, notes, profiles, publishNote, showToast } from '../lib/state'
+import { echoNote, likeNote, notes, profiles, publishNote, session, showToast } from '../lib/state'
 import { Avatar } from './Avatar'
 import { CopyIcon, EchoIcon, HeartIcon, ImageIcon } from './Icons'
 import { fullDate, npubShort, splitContent, timeAgo } from './format'
@@ -66,6 +66,33 @@ function Composer() {
   )
 }
 
+function GuestBanner() {
+  return (
+    <div class="composer">
+      <p style={{ margin: '2px 0 10px' }}>
+        You're looking around as a <b>guest</b> — reading is free and anonymous. To post, be
+        followed, or react, create your identity. It takes ten seconds and needs no e-mail or
+        phone.
+      </p>
+      <div class="row">
+        <span class="hint">Tip: add people under People — guest follows are saved on this device.</span>
+        <span class="spacer" />
+        <button class="btn primary small" onClick={() => (window.location.hash = '#/welcome')}>
+          Create your identity
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Returns true (and nudges toward identity creation) when a signing action is attempted as guest. */
+function requireIdentity(): boolean {
+  if (session.value) return false
+  showToast('Create your identity to do that — it takes ten seconds')
+  window.location.hash = '#/welcome'
+  return true
+}
+
 function PostCard({ ev, index }: { ev: Event; index: number }) {
   const [echoing, setEchoing] = useState(false)
   const profile = profiles.value.get(ev.pubkey)
@@ -104,13 +131,21 @@ function PostCard({ ev, index }: { ev: Event; index: number }) {
         </div>
       )}
       <footer>
-        <button class="iconbtn" title="Like" onClick={() => void likeNote(ev).catch((e) => showToast(String(e)))}>
+        <button
+          class="iconbtn"
+          title="Like"
+          onClick={() => {
+            if (requireIdentity()) return
+            void likeNote(ev).catch((e) => showToast(String(e)))
+          }}
+        >
           <HeartIcon />
         </button>
         <button
           class={`iconbtn${echoing ? ' echoing' : ''}`}
           title="Echo: re-publish to your relays and mirror media, so it survives the author going offline"
           onClick={() => {
+            if (requireIdentity()) return
             setEchoing(true)
             setTimeout(() => setEchoing(false), 650)
             void echoNote(ev)
@@ -136,7 +171,7 @@ function PostCard({ ev, index }: { ev: Event; index: number }) {
 export function Feed() {
   return (
     <div class="view">
-      <Composer />
+      {session.value ? <Composer /> : <GuestBanner />}
       {notes.value.length === 0 ? (
         <div class="empty">
           <p>Nothing here yet.</p>

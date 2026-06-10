@@ -54,7 +54,13 @@ export function BackupGate() {
         >
           Download backup
         </button>
-        <button class="btn primary" onClick={() => (pendingBackup.value = null)}>
+        <button
+          class="btn primary"
+          onClick={() => {
+            pendingBackup.value = null
+            window.location.hash = '#/'
+          }}
+        >
           I saved it — enter Kaja
         </button>
       </div>
@@ -155,6 +161,9 @@ export function Onboarding() {
             <span>Sign with your NIP-07 extension. Your key never touches Kaja.</span>
           </button>
         )}
+        <button class="btn" onClick={() => (window.location.hash = '#/')}>
+          Maybe later — keep looking around
+        </button>
       </div>
       {error && <p class="error">{error}</p>}
     </Gate>

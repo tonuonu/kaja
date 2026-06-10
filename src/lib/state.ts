@@ -154,6 +154,12 @@ export async function init(): Promise<void> {
     await startSession(new Nip07Signer(), 'nip07')
   } else if (localStorage.getItem(LS_NCRYPTSEC)) {
     locked.value = true
+  } else {
+    // Guest mode: no identity yet. Reading is anonymous on Nostr, so the
+    // app works immediately; follows live on this device until the user
+    // creates a key, at which point they are published (see startSession).
+    follows.value = (await getSetting<string[]>(db, 'guestFollows')) ?? []
+    await restartFeed()
   }
 }
 
@@ -214,6 +220,20 @@ async function startSession(signer: Signer, method: 'local' | 'nip07'): Promise<
   locked.value = false
   const contacts = await getMeta(db, KIND_CONTACTS, pubkey)
   follows.value = contacts ? parseContacts(contacts) : []
+
+  // Promote follows collected while browsing as a guest to the real,
+  // published contact list.
+  const guestFollows = ((await getSetting<string[]>(db, 'guestFollows')) ?? []).filter((pk) => pk !== pubkey)
+  if (guestFollows.length > 0) {
+    const merged = [...new Set([...follows.value, ...guestFollows])]
+    if (merged.length > follows.value.length) {
+      const signed = await signer.signEvent(buildContacts(merged))
+      await outbox.enqueue(signed, relays.value)
+      await saveMeta(db, signed)
+      follows.value = merged
+    }
+    await setSetting(db, 'guestFollows', [])
+  }
   const profileEv = await getMeta(db, KIND_PROFILE, pubkey)
   if (profileEv) {
     const p = parseProfile(profileEv)
@@ -257,19 +277,24 @@ function insertNote(ev: Event): void {
 
 export async function restartFeed(): Promise<void> {
   const s = session.value
-  if (!s) return
-  const authors = [s.pubkey, ...follows.value]
-  await feed.start(relays.value, s.pubkey, authors, {
+  const authors = s ? [s.pubkey, ...follows.value] : [...follows.value]
+  if (authors.length === 0) {
+    // Guest who follows nobody yet: nothing to subscribe to.
+    feed.stop()
+    feedRelays.value = []
+    return
+  }
+  await feed.start(relays.value, s?.pubkey ?? null, authors, {
     onNote: (ev, live) => {
       insertNote(ev)
-      if (live && autoEcho.value && ev.pubkey !== s.pubkey) void echoNote(ev, true)
+      if (s && live && autoEcho.value && ev.pubkey !== s.pubkey) void echoNote(ev, true)
     },
     onMeta: (ev) => {
       if (ev.kind === KIND_PROFILE) {
         const p = parseProfile(ev)
         if (p) upsertProfile(ev.pubkey, p)
       }
-      if (ev.kind === KIND_CONTACTS && ev.pubkey === s.pubkey) {
+      if (s && ev.kind === KIND_CONTACTS && ev.pubkey === s.pubkey) {
         follows.value = parseContacts(ev)
       }
     },
@@ -329,20 +354,28 @@ export async function saveOwnProfile(p: ProfileContent): Promise<void> {
 
 export async function followUser(input: string): Promise<void> {
   const s = session.value
-  if (!s) throw new Error('Not logged in')
   const pubkey = toPubkeyHex(input)
-  if (pubkey === s.pubkey || follows.value.includes(pubkey)) return
+  if (pubkey === s?.pubkey || follows.value.includes(pubkey)) return
   const next = [...follows.value, pubkey]
-  const signed = await signAndQueue(buildContacts(next))
-  await saveMeta(db, signed)
+  if (s) {
+    const signed = await signAndQueue(buildContacts(next))
+    await saveMeta(db, signed)
+  } else {
+    // Guest: follows stay on this device until an identity exists.
+    await setSetting(db, 'guestFollows', next)
+  }
   follows.value = next
   await restartFeed()
 }
 
 export async function unfollowUser(pubkey: string): Promise<void> {
   const next = follows.value.filter((p) => p !== pubkey)
-  const signed = await signAndQueue(buildContacts(next))
-  await saveMeta(db, signed)
+  if (session.value) {
+    const signed = await signAndQueue(buildContacts(next))
+    await saveMeta(db, signed)
+  } else {
+    await setSetting(db, 'guestFollows', next)
+  }
   follows.value = next
   await restartFeed()
 }

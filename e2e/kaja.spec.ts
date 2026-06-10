@@ -15,24 +15,31 @@ test.afterAll(() => {
   relay.close()
 })
 
-/** Walks a fresh browser context through onboarding and points it at the local relay. */
-async function onboard(page: Page): Promise<void> {
-  await page.goto('/')
+async function createIdentity(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Create your identity', exact: true }).click()
   await page.getByText('Create a new identity').click()
   const passwords = page.locator('input[type="password"]')
   await passwords.nth(0).fill(PASSPHRASE)
   await passwords.nth(1).fill(PASSPHRASE)
-  await page.getByRole('button', { name: 'Create identity' }).click()
+  await page.getByRole('button', { name: 'Create identity', exact: true }).click()
   await page.getByRole('button', { name: 'I saved it — enter Kaja' }).click()
   await expect(page.getByPlaceholder('What echoes today?')).toBeVisible()
+}
 
-  // Point the client at the hermetic test relay.
+async function setRelay(page: Page): Promise<void> {
   await page.locator('a[href="#/settings"]').click()
   const relayPanel = page.locator('.panel', { hasText: 'Relays (one per line)' })
   await relayPanel.locator('textarea').fill(RELAY_URL)
   await relayPanel.getByRole('button', { name: 'Save' }).click()
-  await expect(page.locator('.chip', { hasText: '127.0.0.1' })).toBeVisible()
+  await expect(page.locator('.toast', { hasText: 'Saved' })).toBeVisible()
   await page.locator('a.navbtn[href="#/"]').click()
+}
+
+/** Walks a fresh browser context from guest landing through onboarding, pointed at the local relay. */
+async function onboard(page: Page): Promise<void> {
+  await page.goto('/')
+  await createIdentity(page)
+  await setRelay(page)
 }
 
 async function publish(page: Page, text: string): Promise<void> {
@@ -91,4 +98,34 @@ test('two browsers exchange posts through a relay', async ({ page, browser }) =>
   })
 
   await contextB.close()
+
+  // --- Guest mode: browse without any identity --------------------------
+  const contextC = await browser.newContext()
+  const pageC = await contextC.newPage()
+  await pageC.goto('/')
+  await expect(pageC.getByText('as a guest', { exact: false }).first()).toBeVisible()
+  await setRelay(pageC)
+
+  // Guest follows A locally and reads A's posts — no key exists yet.
+  await pageC.locator('a[href="#/people"]').click()
+  await pageC.getByPlaceholder('npub1…').fill(npubA!)
+  await pageC.getByRole('button', { name: 'Follow', exact: true }).click()
+  await pageC.locator('a.navbtn[href="#/"]').click()
+  await expect(pageC.locator('.post', { hasText: 'First echo into the night' })).toBeVisible({
+    timeout: 15_000,
+  })
+
+  // Signing actions are gated: liking as guest routes to identity creation.
+  await pageC.locator('.post').first().getByTitle('Like').click()
+  await expect(pageC.getByText('Create a new identity')).toBeVisible()
+  await pageC.getByRole('button', { name: 'Maybe later — keep looking around' }).click()
+  await expect(pageC.locator('.post').first()).toBeVisible()
+
+  // Upgrading to a real identity publishes the guest follows.
+  await createIdentity(pageC)
+  await pageC.locator('a[href="#/people"]').click()
+  await expect(pageC.locator('.panel', { hasText: 'Your address' })).toBeVisible()
+  await expect(pageC.locator('.panel', { hasText: 'Following (1)' }).locator('.personrow')).toHaveCount(1)
+
+  await contextC.close()
 })
