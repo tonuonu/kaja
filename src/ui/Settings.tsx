@@ -142,7 +142,7 @@ function KeyPanel() {
       <button
         class="btn small danger"
         onClick={() => {
-          if (confirm('Log out and remove the key from this browser?')) logout()
+          if (confirm('Log out and remove the key from this browser?')) void logout()
         }}
       >
         Log out

@@ -13,7 +13,7 @@ import {
   type MediaRef,
   type ProfileContent,
 } from './events'
-import { getMeta, getSetting, listFollowers, openKajaDb, saveMeta, saveNote, setSetting, type Db } from './db'
+import { clearFollowers, getMeta, getSetting, listFollowers, openKajaDb, saveMeta, saveNote, setSetting, type Db } from './db'
 import {
   decryptSecret,
   encryptSecret,
@@ -177,7 +177,8 @@ export async function createIdentity(passphrase: string): Promise<string> {
   localStorage.setItem(LS_NCRYPTSEC, encryptSecret(id.sk, passphrase))
   localStorage.setItem(LS_METHOD, 'local')
   pendingBackup.value = id.nsec
-  await startSession(new LocalSigner(id.sk), 'local')
+  // freshKey: a just-generated key cannot have contacts anywhere on the network
+  await startSession(new LocalSigner(id.sk), 'local', true)
   return id.nsec
 }
 
@@ -201,7 +202,7 @@ export async function loginWithExtension(): Promise<void> {
   await startSession(new Nip07Signer(), 'nip07')
 }
 
-export function logout(): void {
+export async function logout(): Promise<void> {
   localStorage.removeItem(LS_NCRYPTSEC)
   localStorage.removeItem(LS_METHOD)
   feed.stop()
@@ -212,9 +213,14 @@ export function logout(): void {
   follows.value = []
   followers.value = []
   seenIds.clear()
+  // Followers and their baseline are scoped to the identity that just left —
+  // the next identity on this device must not inherit them.
+  await clearFollowers(db)
+  await setSetting(db, 'followersBaseline', false)
+  await setSetting(db, 'guestFollows', [])
 }
 
-async function startSession(signer: Signer, method: 'local' | 'nip07'): Promise<void> {
+async function startSession(signer: Signer, method: 'local' | 'nip07', freshKey = false): Promise<void> {
   const pubkey = await signer.getPublicKey()
   session.value = { signer, pubkey, method }
   locked.value = false
@@ -222,17 +228,34 @@ async function startSession(signer: Signer, method: 'local' | 'nip07'): Promise<
   follows.value = contacts ? parseContacts(contacts) : []
 
   // Promote follows collected while browsing as a guest to the real,
-  // published contact list.
+  // published contact list. Failure must never block login — the guest
+  // follows just stay queued for the next session.
   const guestFollows = ((await getSetting<string[]>(db, 'guestFollows')) ?? []).filter((pk) => pk !== pubkey)
   if (guestFollows.length > 0) {
-    const merged = [...new Set([...follows.value, ...guestFollows])]
-    if (merged.length > follows.value.length) {
-      const signed = await signer.signEvent(buildContacts(merged))
-      await outbox.enqueue(signed, relays.value)
-      await saveMeta(db, signed)
-      follows.value = merged
+    try {
+      if (!freshKey) {
+        // An imported/extension key may have a newer contact list on the
+        // network (another device, another client). Kind 3 is replaceable:
+        // merging into a stale local copy and publishing would DESTROY
+        // those follows. Fetch the current list first; offline → defer.
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          throw new Error('offline — deferring guest follow migration')
+        }
+        const remote = await hub.query(relays.value, { kinds: [KIND_CONTACTS], authors: [pubkey] })
+        for (const ev of remote) await saveMeta(db, ev)
+        const current = await getMeta(db, KIND_CONTACTS, pubkey)
+        follows.value = current ? parseContacts(current) : []
+      }
+      const merged = [...new Set([...follows.value, ...guestFollows])]
+      if (merged.length > follows.value.length) {
+        const signed = await signAndQueue(buildContacts(merged))
+        await saveMeta(db, signed)
+        follows.value = merged
+      }
+      await setSetting(db, 'guestFollows', [])
+    } catch (e) {
+      console.warn('guest follow migration deferred:', e)
     }
-    await setSetting(db, 'guestFollows', [])
   }
   const profileEv = await getMeta(db, KIND_PROFILE, pubkey)
   if (profileEv) {

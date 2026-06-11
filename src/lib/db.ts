@@ -85,6 +85,11 @@ export async function addFollower(db: Db, pubkey: string, firstSeen: number): Pr
   return true
 }
 
+/** Followers are scoped to an identity — drop them when that identity leaves the device. */
+export async function clearFollowers(db: Db): Promise<void> {
+  await db.clear('followers')
+}
+
 /** Follower pubkeys, newest first. Unfollows are not detectable (see feed.ts), so this can overcount. */
 export async function listFollowers(db: Db): Promise<string[]> {
   const all = await db.getAll('followers')
