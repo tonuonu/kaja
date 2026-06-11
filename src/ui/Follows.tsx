@@ -38,6 +38,12 @@ export function Follows() {
 
       <div class="panel">
         <h3>Follow someone</h3>
+        {!me && (
+          <p class="hint">
+            Guest follows are saved on this device only; they are published automatically when you
+            create your identity.
+          </p>
+        )}
         <form
           class="addrbox"
           onSubmit={(e) => {
@@ -86,7 +92,8 @@ export function Follows() {
         })}
       </div>
 
-      <div class="panel">
+      {me && (
+        <div class="panel">
         <h3>Followers ({followers.value.length})</h3>
         {followers.value.length === 0 && (
           <p class="hint">Nobody yet. When someone follows you, it shows up here — and as a notification.</p>
@@ -118,7 +125,8 @@ export function Follows() {
             </div>
           )
         })}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

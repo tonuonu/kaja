@@ -43,7 +43,7 @@ function ErrorGate({ message }: { message: string }) {
   )
 }
 
-function StatusBar({ pubkey }: { pubkey: string }) {
+function StatusBar({ pubkey }: { pubkey: string | null }) {
   return (
     <footer class="statusbar">
       <span>
@@ -54,9 +54,15 @@ function StatusBar({ pubkey }: { pubkey: string }) {
       {outboxPending.value > 0 && (
         <span style={{ color: 'var(--amber)' }}>OUTBOX {outboxPending.value}</span>
       )}
-      <span class="me" title="Your address">
-        {npubShort(pubkey)}
-      </span>
+      {pubkey ? (
+        <span class="me" title="Your address">
+          {npubShort(pubkey)}
+        </span>
+      ) : (
+        <a class="me" href="#/welcome" style={{ color: 'var(--amber)' }}>
+          GUEST
+        </a>
+      )}
     </footer>
   )
 }
@@ -75,8 +81,10 @@ export function App() {
   if (!ready.value) return <div class="splash">KAJA · TUNING…</div>
   if (locked.value) return <Unlock />
   const s = session.value
-  if (!s) return <Onboarding />
   if (pendingBackup.value) return <BackupGate />
+  // Guests browse the full app; identity creation lives behind #/welcome
+  // and is only required at the first signing action.
+  if (!s && route.value === 'welcome') return <Onboarding />
 
   const r = route.value
   return (
@@ -101,7 +109,7 @@ export function App() {
         </header>
         {r === 'people' ? <Follows /> : r === 'settings' ? <Settings /> : <Feed />}
       </div>
-      <StatusBar pubkey={s.pubkey} />
+      <StatusBar pubkey={s?.pubkey ?? null} />
       {toast.value && <div class="toast">{toast.value}</div>}
     </>
   )

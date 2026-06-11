@@ -41,7 +41,8 @@ export class FeedManager {
     this.#db = db
   }
 
-  async start(baseRelays: string[], me: string, authors: string[], cb: FeedCallbacks): Promise<void> {
+  /** `me` is null in guest mode (no identity yet): reading needs no key, so only the follower watch is skipped. */
+  async start(baseRelays: string[], me: string | null, authors: string[], cb: FeedCallbacks): Promise<void> {
     this.stop()
     const authorList = [...new Set(authors)]
     const authorSet = new Set(authorList)
@@ -101,6 +102,7 @@ export class FeedManager {
     // 6. Follower watch: anyone publishing a contact list that tags us.
     //    Unfollows are invisible here — an unfollow event no longer carries
     //    our p tag, so it never matches this filter. Known limitation.
+    if (me === null) return
     const baselined = (await getSetting<boolean>(this.#db, 'followersBaseline')) ?? false
     const followerEvents = await this.#hub.query(this.relays, { kinds: [KIND_CONTACTS], '#p': [me] })
     const found: string[] = []

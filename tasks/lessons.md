@@ -19,3 +19,11 @@ private modes).
    and the VersionError self-heal path (purge caches/SW, reload once).
 4. Key storage writes must be guarded: never overwrite an existing ncryptsec without an
    explicit logout first.
+
+## 2026-06-10 — e2e ran against stale dist/ (self-inflicted)
+
+Playwright's webServer only served dist/; after editing source, the test re-ran old code
+and reproduced the "fixed" bug, costing a debugging round. Rule: the e2e webServer command
+must build first (now `npm run build && npm run preview`). Also: never set location.hash
+(or any navigation) after a long await — the user has navigated elsewhere by then; do it
+synchronously in the click handler that completes the flow.
